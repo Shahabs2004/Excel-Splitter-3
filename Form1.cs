@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Data;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using Outlook = Microsoft.Office.Interop.Outlook;
 
@@ -50,11 +51,23 @@ namespace ExcelSpliter3
             }
         }
 
-        private void log(string log)
+        private void logOld(string log)
         {
             logBox.Items.Add(log);
             logBox.Refresh();
             logBox.SelectedIndex = logBox.Items.Count - 1;
+        }
+
+        public void log(string logMessage)
+        {
+            if (this.logBox.InvokeRequired)
+            {
+                this.logBox.Invoke(new Action<string>(log), new object[] { logMessage });
+            }
+            else
+            {
+                this.logBox.Items.Add(logMessage);
+            }
         }
 
         private void LoadDataIntoGrid(string fileName, string sheetName, DataGridView dataGridView)
@@ -305,6 +318,116 @@ namespace ExcelSpliter3
             }
         }
 
+
+        public void SplitSheetByColumnValueAsync(string fileName, string worksheetName, string columnName)
+        {
+            // Load the Excel file
+            Workbook workbook = new Workbook(fileName);
+
+            // Get the specified worksheet
+            Worksheet worksheet = workbook.Worksheets[worksheetName];
+
+            // Find the column index based on the column name
+            Cells cells = worksheet.Cells;
+            int columnIndex = -1;
+            for (int col = cells.MinColumn; col <= cells.MaxColumn; col++)
+            {
+                if (cells[0, col].StringValue == columnName)
+                {
+                    columnIndex = col;
+                    break;
+                }
+            }
+
+            if (columnIndex == -1)
+            {
+                // Column name not found
+                return;
+            }
+
+            // Get the unique values in the specified column
+            Range columnRange = cells.CreateRange(cells.MinDataRow, columnIndex, cells.MaxDataRow - cells.MinDataRow + 1, 1);
+
+            object[,] columnValues = columnRange.Value as object[,];
+            object[] uniqueValues = columnValues.Cast<object>().Distinct().ToArray();
+
+            // Split the sheet into multiple files based on the unique column values
+            Parallel.For(1, uniqueValues.Length, i =>
+            {
+                string columnValue = uniqueValues[i].ToString();
+
+                // Create a new workbook and worksheet
+                Workbook newWorkbook = new Workbook();
+                newWorkbook.BuiltInDocumentProperties.Author = "شهاب صادقی";
+                newWorkbook.BuiltInDocumentProperties.Comments = "این فایل توسط نرم افزار اکسل اسپلیتر 3 ایجاد شده است";
+                if (setWorkbookPassword.Checked)
+                {
+                    newWorkbook.Settings.WriteProtection.Password = workBookPassword.Text;
+                    newWorkbook.Settings.WriteProtection.Author = "شهاب صادقی";
+                }
+
+                Worksheet newWorksheet = newWorkbook.Worksheets[0];
+
+                // Copy the header row
+                for (int col = cells.MinColumn; col <= cells.MaxColumn; col++)
+                {
+                    newWorksheet.Cells[0, col].Copy(cells[0, col]);
+                }
+
+                // Copy the rows for the specific column value
+                int newRow = 1;
+                for (int row = cells.MinDataRow + 1; row <= cells.MaxDataRow; row++)
+                {
+                    if (cells[row, columnIndex].StringValue == columnValue)
+                    {
+                        for (int col = cells.MinColumn; col <= cells.MaxColumn; col++)
+                        {
+                            newWorksheet.Cells[newRow, col].Copy(cells[row, col]);
+                        }
+                        newRow++;
+                    }
+                }
+
+                if (RemoveDuplicates.Checked)
+                    newWorksheet.Cells.RemoveDuplicates();
+
+                // Remove the remaining empty rows
+                newWorksheet.Cells.DeleteRows(newRow, newWorksheet.Cells.MaxDataRow - newRow + 1, true);
+                if (Autofit.Checked)
+                {
+                    newWorksheet.AutoFitColumns();
+                }
+
+                if (freezTopRow.Checked)
+                {
+                    try
+                    {
+                        newWorksheet.FreezePanes(1, 0, 1, 0);
+                    }
+                    catch (Exception e)
+                    {
+                        log("خطا در فریز کردن ردیف اول");
+                    }
+                }
+
+                // Save the new workbook to a separate file
+                string newFileName = Path.Combine(Path.GetDirectoryName(fileName), $"{RemoveInvalidFileNameChars(columnValue)}_{Path.GetFileNameWithoutExtension(fileName)}");
+
+                foreach (var format in ExportTo.CheckedItems)
+                {
+                    SaveFormat formattoSave = (SaveFormat)Enum.Parse(typeof(SaveFormat), format.ToString(), true);
+                    newWorkbook.Save(newFileName + "." + format, formattoSave);
+                    log(newFileName + "." + format);
+                    if (sendMail.Checked)
+                    {
+                        SendEmail(columnValue + MailPart.Text, mailSubject.Text, newFileName + "." + format, mailBody.Text);
+                        log("Mail to " + columnValue);
+                    }
+                }
+            });
+        }
+
+
         public static string RemoveInvalidFileNameChars(string input)
         {
             char[] invalidChars = Path.GetInvalidFileNameChars();
@@ -456,6 +579,13 @@ namespace ExcelSpliter3
         private void sendMail_CheckedChanged(object sender, EventArgs e)
         {
             UpdateExportControls();
+        }
+
+        private void button1_Click(object sender, EventArgs e)
+        {
+            log("شروع تقسیم آسینک...");
+            SplitSheetByColumnValueAsync(ExcelFile, Worksheets.SelectedItem.ToString(), Headers.SelectedItem.ToString());
+            log("اتمام عملیات");
         }
     }
 }
