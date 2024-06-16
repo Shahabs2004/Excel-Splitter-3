@@ -187,9 +187,40 @@ namespace ExcelSpliter3
 
                 // If you want to send the email automatically, uncomment the following lines and comment out the "mailItem.Display()" line
                 mailItem.Send();
+                
 
                 ReleaseObject(mailItem);
                 ReleaseObject(outlookApp);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("An error occurred while sending the email: " + ex.Message);
+            }
+        }
+
+        private Outlook.Application outlookApp = new Outlook.Application();
+
+        private async Task SendEmailAsync(string toAddress, string subject, string attachmentFilePath, string body)
+        {
+            try
+            {
+                await Task.Run(() =>
+                               {
+                                   Outlook.MailItem mailItem = (Outlook.MailItem)outlookApp.CreateItem(Outlook.OlItemType.olMailItem);
+
+                                   mailItem.Subject = subject;
+                                   mailItem.Body = body;
+                                   mailItem.To = toAddress;
+
+                                   if (!string.IsNullOrEmpty(attachmentFilePath))
+                                   {
+                                       mailItem.Attachments.Add(attachmentFilePath);
+                                   }
+
+                                   mailItem.Send();
+
+                                   ReleaseObject(mailItem);
+                               });
             }
             catch (Exception ex)
             {
@@ -307,7 +338,8 @@ namespace ExcelSpliter3
                     log(newFileName+"."+format);
                     if (sendMail.Checked)
                     {
-                        SendEmail(columnValue + MailPart.Text, mailSubject.Text, newFileName + "." + format, mailBody.Text);
+                        //SendEmail(columnValue + MailPart.Text, mailSubject.Text, newFileName + "." + format, mailBody.Text);
+                        SendEmailAsync(columnValue + MailPart.Text, mailSubject.Text, newFileName + "." + format, mailBody.Text);
                         log("Mail to " + columnValue);
                     }
                 }
@@ -420,7 +452,8 @@ namespace ExcelSpliter3
                     log(newFileName + "." + format);
                     if (sendMail.Checked)
                     {
-                        SendEmail(columnValue + MailPart.Text, mailSubject.Text, newFileName + "." + format, mailBody.Text);
+                        //SendEmail(columnValue + MailPart.Text, mailSubject.Text, newFileName + "." + format, mailBody.Text);
+                        SendEmailAsync(columnValue + MailPart.Text, mailSubject.Text, newFileName + "." + format, mailBody.Text);
                         log("Mail to " + columnValue);
                     }
                 }
@@ -473,7 +506,8 @@ namespace ExcelSpliter3
                     log("Exported "+newFileName + "." + format);
                     if (sendMail.Checked)
                     {
-                        SendEmail(sheet.Name + MailPart.Text, mailSubject.Text, newFileName + "." + format, mailBody.Text);
+                        //SendEmail(sheet.Name + MailPart.Text, mailSubject.Text, newFileName + "." + format, mailBody.Text);
+                        SendEmailAsync(sheet.Name + MailPart.Text, mailSubject.Text, newFileName + "." + format, mailBody.Text);
                         log("mail to " + sheet.Name);
                     }
                 }
